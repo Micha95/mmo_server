@@ -1,0 +1,63 @@
+# Build and binary output
+Server/build/
+Server/*/build/
+Server/*/CMakeFiles/
+Server/*/Makefile
+Server/*/cmake_install.cmake
+Server/*/CMakeCache.txt
+Server/*/*.o
+Server/*/*.a
+Server/*/*.so
+Server/*/*.exe
+Server/*/*.dll
+Server/*/*.lib
+Server/*/*.pdb
+Server/*/*.obj
+Server/*/*.log
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE/project files
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln
+*.VC.db
+*.VC.opendb
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Unreal/Plugins build output
+client/Plugins/*/Binaries/
+client/Plugins/*/Intermediate/
+client/Plugins/*/Saved/
+client/Plugins/*/DerivedDataCache/
+
+# Unreal project build output
+client/Binaries/
+client/Intermediate/
+client/Saved/
+client/DerivedDataCache/
+
+# Python/other
+*.pyc
+__pycache__/
+
+# Logs
+*.log
+*.tmp
+
+# Misc
+*.swp
+*.bak
+*.old
+*.orig
