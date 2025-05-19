@@ -553,13 +553,13 @@ void UMMOClient::HandleChatPacket(const TArray<uint8>& Data)
 
 bool UMMOClient::EncryptAndCompress(const TArray<uint8>& In, TArray<uint8>& Out)
 {
-    TArray<uint8> Compressed;
-    if (!CompressLZ4(In, Compressed)) {
-        UE_LOG(LogMMOClient, Error, TEXT("Compression failed."));
+    TArray<uint8> Encrypted;
+    if (!AesEncrypt(In, Encrypted, PACKET_CRYPTO_KEY)) {
+        UE_LOG(LogMMOClient, Error, TEXT("Encryption failed."));
         return false;
     }
-    if (!AesEncrypt(Compressed, Out, PACKET_CRYPTO_KEY)) {
-        UE_LOG(LogMMOClient, Error, TEXT("Encryption failed."));
+    if (!CompressLZ4(Encrypted, Out)) {
+        UE_LOG(LogMMOClient, Error, TEXT("Compression failed."));
         return false;
     }
     return true;
@@ -567,13 +567,13 @@ bool UMMOClient::EncryptAndCompress(const TArray<uint8>& In, TArray<uint8>& Out)
 
 bool UMMOClient::DecryptAndDecompress(const TArray<uint8>& In, TArray<uint8>& Out)
 {
-    TArray<uint8> Decrypted;
-    if (!AesDecrypt(In, Decrypted, PACKET_CRYPTO_KEY)) {
-        UE_LOG(LogMMOClient, Error, TEXT("Decryption failed."));
+    TArray<uint8> Decompressed;
+    if (!DecompressLZ4(In, Decompressed, In.Num())) {
+        UE_LOG(LogMMOClient, Error, TEXT("Decompression failed."));
         return false;
     }
-    if (!DecompressLZ4(Decrypted, Out, In.Num())) {
-        UE_LOG(LogMMOClient, Error, TEXT("Decompression failed."));
+    if (!AesDecrypt(Decompressed, Out, PACKET_CRYPTO_KEY)) {
+        UE_LOG(LogMMOClient, Error, TEXT("Decryption failed."));
         return false;
     }
     return true;

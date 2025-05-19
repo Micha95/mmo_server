@@ -50,6 +50,7 @@ int BaseServer::run(int argc, char** argv) {
     if (!startSocket()) return 1;
     connectRedisWithRetry();
     connectMySQLWithRetry(); // connect to MySQL on startup
+    PrintMySQLDiagnostics(); // Print MySQL diagnostics
     // Register connection/disconnection handlers
     server->setConnectionHandler(
         [this](intptr_t clientSock) {
@@ -76,16 +77,8 @@ int BaseServer::run(int argc, char** argv) {
             LOG_DEBUG(oss.str());
         }
         // Decrypt and decompress before passing to handler
-        std::vector<uint8_t> plain;
-        if (!Crypto::decrypt(d, plain, PACKET_CRYPTO_KEY)) return;
-        {
-            std::ostringstream oss;
-            oss << "Decrypted packet from fd=" << clientSock << ", size=" << plain.size() << ": ";
-            for (auto b : plain) oss << std::hex << (int)b << " ";
-            LOG_DEBUG(oss.str());
-        }
         std::vector<uint8_t> decompressed;
-        if (!Compression::decompress(plain, decompressed)) {
+        if (!Compression::decompress(d, decompressed)) {
             LOG_ERROR(std::string("Failed to decompress packet from fd=") + std::to_string(clientSock) + ". Dropping packet.");
             return;
         }
@@ -95,22 +88,31 @@ int BaseServer::run(int argc, char** argv) {
             for (auto b : decompressed) oss << std::hex << (int)b << " ";
             LOG_DEBUG(oss.str());
         }
+        std::vector<uint8_t> plain;
+        if (!Crypto::decrypt(decompressed, plain, PACKET_CRYPTO_KEY)) return;
+        {
+            std::ostringstream oss;
+            oss << "Decrypted packet from fd=" << clientSock << ", size=" << plain.size() << ": ";
+            for (auto b : plain) oss << std::hex << (int)b << " ";
+            LOG_DEBUG(oss.str());
+        }
+        
         // Defensive: check minimum size before handlePacket
-        if (decompressed.size() < sizeof(PacketHeader)) {
-            LOG_ERROR(std::string("Decompressed packet too small from fd=") + std::to_string(clientSock) + ". Dropping packet.");
+        if (plain.size() < sizeof(PacketHeader)) {
+            LOG_ERROR(std::string("Packet too small from fd=") + std::to_string(clientSock) + ". Dropping packet.");
             return;
         }
         //Unpack the packet header
         PacketHeader header;
-        std::memcpy(&header, decompressed.data(), sizeof(PacketHeader));
+        std::memcpy(&header, plain.data(), sizeof(PacketHeader));
         const char* packetName = PacketTypeToString(header.packetId);
-        LOG_DEBUG("Received packet from fd=" + std::to_string(clientSock) + ", packetId=" + std::to_string(header.packetId) + " (" + packetName + "), size=" + std::to_string(decompressed.size()));
+        LOG_DEBUG("Received packet from fd=" + std::to_string(clientSock) + ", packetId=" + std::to_string(header.packetId) + " (" + packetName + "), size=" + std::to_string(plain.size()));
         // Check for heartbeat packet
         if (header.packetId == PACKET_C_HEARTBEAT) {
-            handleHeartbeatPacket(decompressed, clientSock);
+            handleHeartbeatPacket(plain, clientSock);
             return;
         }
-        handlePacket(header,decompressed, clientSock);
+        handlePacket(header,plain, clientSock);
     });
     mainLoop();
     LOG_DEBUG("mainLoop() is returning.");

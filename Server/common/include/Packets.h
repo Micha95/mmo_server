@@ -299,15 +299,15 @@ static const std::vector<uint8_t> PACKET_CRYPTO_KEY = {
 inline std::vector<uint8_t> SerializePacketRaw(const void* packet, size_t size) {
     const uint8_t* ptr = reinterpret_cast<const uint8_t*>(packet);
     std::vector<uint8_t> out(ptr, ptr + size);
+     // Always encrypt
+    std::vector<uint8_t> encrypted;
+    if (Crypto::encrypt(out, encrypted, PACKET_CRYPTO_KEY)) {
+        out = std::move(encrypted);
+    }
     // Always compress
     std::vector<uint8_t> compressed;
     if (Compression::compress(out, compressed)) {
         out = std::move(compressed);
-    }
-    // Always encrypt
-    std::vector<uint8_t> encrypted;
-    if (Crypto::encrypt(out, encrypted, PACKET_CRYPTO_KEY)) {
-        out = std::move(encrypted);
     }
     return out;
 }
