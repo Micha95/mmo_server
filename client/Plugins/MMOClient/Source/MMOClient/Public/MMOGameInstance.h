@@ -37,12 +37,26 @@ public:
     UFUNCTION(BlueprintCallable, Category = "MMO|Movement")
     void SendMoveRequest(const FVector& NewLocation);
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MMO|Network")
+    TSubclassOf<UNetworkedEntityManager> NetworkedEntityManagerClass;
+
     UPROPERTY(BlueprintReadOnly)
-    class UNetworkedEntityManager* NetworkedEntityManager = nullptr;
+    UNetworkedEntityManager* NetworkedEntityManager = nullptr;
 
     UFUNCTION(BlueprintCallable, Category="MMO|Network")
     void SetNetworkedEntityManager(UNetworkedEntityManager* Manager) { NetworkedEntityManager = Manager; }
 
+    // Returns the PIE (Play-In-Editor) client index, or -1 if not in PIE
+    UFUNCTION(BlueprintCallable, Category="MMO|Debug")
+    int32 GetPIEClientIndex() const;
+
+
+    // Character ID
+    UPROPERTY(BlueprintReadOnly, Category="MMO|Char")
+    int32 SelectedCharacterId = -1;
     virtual void Init() override;
     virtual void Shutdown() override;
+
+    UFUNCTION(BlueprintCallable, Category="MMO|Char")
+    int32 GetSelectedCharacterId() const { return SelectedCharacterId; }
 };

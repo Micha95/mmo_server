@@ -7,7 +7,7 @@
 
 Player::Player() { type = EntityType::PLAYER; }
 
-void Player::InitFromDB(MySQLClient& mysql, int32_t charId, const std::string& name, int32_t accountId, ZoneManager* zm) {
+void Player::InitFromDB(MySQLClient& mysql, int32_t charId, const std::string& name, int32_t accountId) {
     id = charId;
     this->name = name;
     this->accountId = accountId;
@@ -19,8 +19,8 @@ void Player::InitFromDB(MySQLClient& mysql, int32_t charId, const std::string& n
         y = std::stof(posResult[0][1]);
         z = std::stof(posResult[0][2]);
     }
-    zoneId = ZoneManager::CalculateZoneId(x, y);
-    SetZoneManager(zm);
+    ZoneManager* zm = ZoneManager::Get();
+    zoneId = zm ? zm->CalculateZoneId(x, y) : 0;
 }
 
 void Player::Update(float deltaTime) {

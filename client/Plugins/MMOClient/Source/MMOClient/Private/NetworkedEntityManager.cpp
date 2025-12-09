@@ -12,15 +12,20 @@
 #include "UObject/SoftObjectPtr.h"
 #include "Packets.h"
 
+// --- AActor implementation for placable manager ---
+UNetworkedEntityManager::UNetworkedEntityManager() {}
+
 TWeakObjectPtr<UNetworkedEntityManager> UNetworkedEntityManager::Singleton;
 
-UNetworkedEntityManager* UNetworkedEntityManager::Get(UWorld* World)
+UNetworkedEntityManager* UNetworkedEntityManager::Get(UGameInstance* GameInstance)
 {
     if (!Singleton.IsValid()) {
-        UNetworkedEntityManager* NewMgr = NewObject<UNetworkedEntityManager>(World ? World->GetGameInstance() : nullptr);
-        if (NewMgr) {
-            NewMgr->RegisterWithGameInstance(World);
-            Singleton = NewMgr;
+        if (GameInstance) {
+            UNetworkedEntityManager* NewMgr = NewObject<UNetworkedEntityManager>(GameInstance, GameInstance->GetClass()->GetDefaultObject<UMMOGameInstance>()->NetworkedEntityManagerClass);
+            if (NewMgr) {
+                NewMgr->RegisterWithGameInstance(GameInstance);
+                Singleton = NewMgr;
+            }
         }
     }
     return Singleton.Get();
@@ -28,45 +33,41 @@ UNetworkedEntityManager* UNetworkedEntityManager::Get(UWorld* World)
 
 void UNetworkedEntityManager::BeginDestroy()
 {
-    DeregisterFromGameInstance(GetWorld());
+    // Cleanup: Destroy all spawned actors and clear entity maps
+    for (auto& Elem : Entities)
+    {
+        FNetworkedEntityInfo& Info = Elem.Value;
+        if (Info.Actor.IsValid())
+        {
+            Info.Actor->Destroy();
+        }
+    }
+    Entities.Empty();
+    PlayerEntities.Empty();
+    MobEntities.Empty();
+    NPCEntities.Empty();
+    ItemEntities.Empty();
+    ShardEntities.Empty();
+    SpawnedActors.Empty();
+    DeregisterFromGameInstance(Cast<UGameInstance>(GetOuter()));
     Super::BeginDestroy();
 }
 
-void UNetworkedEntityManager::RegisterWithGameInstance(UWorld* World)
+void UNetworkedEntityManager::RegisterWithGameInstance(UGameInstance* GameInstance)
 {
-    if (!World) return;
-    UGameInstance* GameInstance = World->GetGameInstance();
     if (!GameInstance) return;
-    UClass* DesiredClass = GameInstanceClass.LoadSynchronous();
-    if (!DesiredClass) DesiredClass = UMMOGameInstance::StaticClass();
-    if (!DesiredClass->IsChildOf(UMMOGameInstance::StaticClass())) {
-        UE_LOG(LogTemp, Error, TEXT("GameInstanceClass must derive from MMOGameInstance!"));
-        return;
-    }
-    if (GameInstance->IsA(DesiredClass)) {
-        UMMOGameInstance* MMOInst = Cast<UMMOGameInstance>(GameInstance);
-        if (MMOInst) {
-            MMOInst->SetNetworkedEntityManager(this);
-        }
+    UMMOGameInstance* MMOInst = Cast<UMMOGameInstance>(GameInstance);
+    if (MMOInst) {
+        MMOInst->SetNetworkedEntityManager(this);
     }
 }
 
-void UNetworkedEntityManager::DeregisterFromGameInstance(UWorld* World)
+void UNetworkedEntityManager::DeregisterFromGameInstance(UGameInstance* GameInstance)
 {
-    if (!World) return;
-    UGameInstance* GameInstance = World->GetGameInstance();
     if (!GameInstance) return;
-    UClass* DesiredClass = GameInstanceClass.LoadSynchronous();
-    if (!DesiredClass) DesiredClass = UMMOGameInstance::StaticClass();
-    if (!DesiredClass->IsChildOf(UMMOGameInstance::StaticClass())) {
-        UE_LOG(LogTemp, Error, TEXT("GameInstanceClass must derive from MMOGameInstance!"));
-        return;
-    }
-    if (GameInstance->IsA(DesiredClass)) {
-        UMMOGameInstance* MMOInst = Cast<UMMOGameInstance>(GameInstance);
-        if (MMOInst) {
-            MMOInst->SetNetworkedEntityManager(nullptr);
-        }
+    UMMOGameInstance* MMOInst = Cast<UMMOGameInstance>(GameInstance);
+    if (MMOInst) {
+        MMOInst->SetNetworkedEntityManager(nullptr);
     }
 }
 
@@ -99,9 +100,23 @@ AActor* UNetworkedEntityManager::SpawnActorForEntity(UWorld* World, ENetworkedEn
 void UNetworkedEntityManager::SpawnEntity(int64 EntityId, ENetworkedEntityType Type, int32 ShardId, const FVector& Location, const FRotator& Rotation)
 {
     if (Entities.Contains(EntityId)) return; // Already exists
-    UWorld* World = GEngine ? GEngine->GetWorldFromContextObjectChecked(this) : nullptr;
-    if (!World) return;
+    UWorld* World = nullptr;
+    if (UGameInstance* GameInstance = Cast<UGameInstance>(GetOuter())) {
+        World = GameInstance->GetWorld();
+    }
+    if (!World) {
+        UE_LOG(LogTemp, Error, TEXT("[NetworkedEntityManager] Could not get valid world from GameInstance!"));
+        return;
+    }
     AActor* Actor = SpawnActorForEntity(World, Type, Location, Rotation);
+    if (Actor) {
+        UE_LOG(LogTemp, Warning, TEXT("[NetworkedEntityManager] Spawned actor: %s at %s in world: %s (IsValid: %d, IsPendingKillPending: %d)"),
+            *Actor->GetName(), *Location.ToString(), *World->GetName(), Actor->IsValidLowLevel(), Actor->IsPendingKillPending());
+        SpawnedActors.Add(Actor); // Hold strong reference to prevent GC
+    } else {
+        UE_LOG(LogTemp, Error, TEXT("[NetworkedEntityManager] Failed to spawn actor for entity %lld of type %d at %s in world: %s"),
+            EntityId, (int32)Type, *Location.ToString(), World ? *World->GetName() : TEXT("NULL"));
+    }
     FNetworkedEntityInfo Info;
     Info.EntityId = EntityId;
     Info.EntityType = Type;
@@ -136,6 +151,7 @@ void UNetworkedEntityManager::DespawnEntity(int64 EntityId)
     if (!Info) return;
     if (Info->Actor.IsValid()) {
         Info->Actor->Destroy();
+        SpawnedActors.Remove(Info->Actor.Get()); // Remove strong reference
     }
     ShardEntities.FindOrAdd(Info->ShardId).Remove(EntityId);
     // Remove from type-specific map
@@ -264,8 +280,23 @@ void UNetworkedEntityManager::SpawnPlayerEntity(int64 EntityId, int32 ShardId, c
         //Info->Level = Level; // Store level
     }
     if (Info && Info->Actor.IsValid()) {
-        // Optionally set actor properties here, e.g. name
         Info->Actor->SetActorLabel(Name);
+        // Possess the actor if this is the local player
+        UWorld* World = Info->Actor->GetWorld();
+        if (World)
+        {
+            UGameInstance* GameInstance = World->GetGameInstance();
+            UMMOGameInstance* MMOGameInstance = Cast<UMMOGameInstance>(GameInstance);
+            if (MMOGameInstance && EntityId == MMOGameInstance->GetSelectedCharacterId())
+            {
+                APlayerController* PC = World->GetFirstPlayerController();
+                APawn* Pawn = Cast<APawn>(Info->Actor.Get());
+                if (PC && Pawn)
+                {
+                    PC->Possess(Pawn);
+                }
+            }
+        }
     }
 
 

@@ -41,8 +41,9 @@ class MMOCLIENT_API UNetworkedEntityManager : public UObject
 {
     GENERATED_BODY()
 public:
+    UNetworkedEntityManager();
     // Singleton accessor
-    static UNetworkedEntityManager* Get(UWorld* World);
+    static UNetworkedEntityManager* Get(UGameInstance* GameInstance);
     // Auto-register/deregister
     virtual void BeginDestroy() override;
     // Entity management
@@ -76,8 +77,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Network|Entities")
     TSoftClassPtr<AActor> ItemActorClass;
 
-        // Type-specific MMOClient integration points
-
+    // Type-specific MMOClient integration points
     void HandlePlayerSpawnPacket(const struct S_PlayerSpawn& Packet);
     void HandlePlayerDespawnPacket(const struct S_PlayerDespawn& Packet);
     void HandleMobSpawnPacket(const struct S_MobSpawn& Packet);
@@ -96,6 +96,11 @@ public:
     UFUNCTION(BlueprintCallable)
     void SpawnItemEntity(int64 EntityId, int32 ShardId, const FVector& Location, int32 ItemId, int32 Count);
 
+    // Singleton instance
+    static TWeakObjectPtr<UNetworkedEntityManager> Singleton;
+    // Register/deregister with game instance
+    void RegisterWithGameInstance(UGameInstance* GameInstance);
+    void DeregisterFromGameInstance(UGameInstance* GameInstance);
 private:
     // EntityId -> Info (all entities, for fast lookup)
     UPROPERTY()
@@ -111,12 +116,9 @@ private:
     TMap<int64, FNetworkedEntityInfo> NPCEntities;
     UPROPERTY()
     TMap<int64, FNetworkedEntityInfo> ItemEntities;
+    // Hold strong references to spawned actors to prevent GC
+    UPROPERTY()
+    TArray<AActor*> SpawnedActors;
     // Helper: Spawns the correct Actor type for the entity
     AActor* SpawnActorForEntity(UWorld* World, ENetworkedEntityType Type, const FVector& Location, const FRotator& Rotation);
-    // Singleton instance
-    static TWeakObjectPtr<UNetworkedEntityManager> Singleton;
-    // Register/deregister with game instance
-    void RegisterWithGameInstance(UWorld* World);
-    void DeregisterFromGameInstance(UWorld* World);
-
 };

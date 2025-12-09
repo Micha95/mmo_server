@@ -4,6 +4,7 @@
 #include "SocketServer.h"
 #include "MySQLClient.h" // Include MySQLClient header
 #include "Packets.h"
+#include "WebGuiServer.h" // Include WebGuiServer header
 #include <string>
 #include <atomic>
 #include <thread>
@@ -55,9 +56,12 @@ public:
     std::unordered_map<std::string, SessionInfo>& GetSessionMap() { return sessionMap; }
     MySQLClient& GetMySQL() { return mysql; }
     Config& GetConfig() { return config; } // NEW: Provide public accessor for config
+    bool IsWebGuiEnabled() const { return webGuiEnabled; } // NEW: Accessor for web GUI enabled flag
+
+    bool loadConfig(int argc, char** argv);
 
 protected:
-    bool loadConfig(int argc, char** argv);
+    
     bool startSocket();
     void connectRedisWithRetry();
     void connectMySQLWithRetry(); // NEW
@@ -76,7 +80,9 @@ protected:
     std::string redisKey;
     int num_sessions;
     bool mysqlConnected = false; // NEW: shared connection state
+    bool webGuiEnabled = false; // NEW: web GUI enabled flag
     std::unordered_map<std::string, SessionInfo> sessionMap; // Track connected clients by endpoint (IP:port)
+    std::unique_ptr<WebGuiServer> webGuiServer; // NEW: web GUI server instance
 
     static std::string GenerateUniqueId();
     static void RegisterServerInRedis(RedisClient& redis, const std::string& key, const std::string& ip, int port, int num_sessions);
@@ -84,6 +90,8 @@ protected:
     // Heartbeat helpers
     void handleHeartbeatPacket(const std::vector<uint8_t>& data, intptr_t clientSock, const sockaddr_in& clientAddr);
     void checkHeartbeatTimeouts();
+
+    virtual ~BaseServer();
 };
 
 // Inline static member definition for header-only usage

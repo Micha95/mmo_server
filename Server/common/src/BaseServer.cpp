@@ -18,7 +18,13 @@ BaseServer* g_lastBaseServerInstance = nullptr; // ADD: Define global pointer
 
 BaseServer::BaseServer(const std::string& serverType)
     : serverType(serverType), num_sessions(0) {
-    g_lastBaseServerInstance = this; // SET: Update global pointer in constructor
+    g_lastBaseServerInstance = this;
+    StartLogThread(); // Start async logging thread for all servers
+}
+
+BaseServer::~BaseServer() {
+    if (webGuiServer) webGuiServer->Stop();
+    StopLogThread(); // Stop async logging thread for all servers
 }
 
 void BaseServer::connectMySQLWithRetry() {
@@ -50,6 +56,14 @@ int BaseServer::run(int argc, char** argv) {
     std::strftime(timebuf, sizeof(timebuf), "%Y%m%d_%H_%M", &tm);
     SetLogFileName(serverType + "_" + uniqueId + "_" + timebuf + ".log");
     if (!loadConfig(argc, argv)) return 1;
+    // Start WebGuiServer if enabled in config
+    if (config.getInt("webgui_enabled", 0) > 0) {
+        webGuiEnabled = true;
+        int webPort = config.getInt("webgui_port", 8080);
+        webGuiServer = std::make_unique<WebGuiServer>(this, webPort);
+        webGuiServer->Start();
+        LOG_INFO("WebGuiServer started on port " + std::to_string(webPort));
+    }
     if (!startSocket()) return 1;
     connectRedisWithRetry();
     connectMySQLWithRetry(); // connect to MySQL on startup
@@ -230,7 +244,7 @@ void BaseServer::handleHeartbeatPacket(const std::vector<uint8_t>& data, intptr_
     auto it = sessionMap.find(endpointKey);
     if (it != sessionMap.end()) {
         if(!it->second.sessionKey.empty()) {
-           LOG_DEBUG("Received heartbeat from client " + endpointKey + ", sessionKey=" + it->second.sessionKey);
+           LOG_DEBUG_EXT("Received heartbeat from client " + endpointKey + ", sessionKey=" + it->second.sessionKey);
            redis.expire("session_" + it->second.sessionKey, HEARTBEAT_TIMEOUT_SEC + 1);
            it->second.lastHeartbeat = std::chrono::steady_clock::now();
             S_Heartbeat resp;

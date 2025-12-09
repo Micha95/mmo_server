@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MMO Server Monitor</title>
+<style>
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #23272b; color: #eaeaea; margin: 0; }
+header { background: #181a1b; padding: 1em 2em; }
+h1 { margin: 0; font-size: 2em; color: #6ec1e4; }
+.container { max-width: 1200px; margin: 2em auto; background: #292d32; border-radius: 8px; box-shadow: 0 2px 8px #0008; padding: 2em; }
+section { margin-bottom: 2em; }
+h2 { color: #6ec1e4; border-bottom: 1px solid #444; padding-bottom: 0.3em; }
+table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+th, td { border: 1px solid #444; padding: 0.5em 1em; text-align: left; }
+th { background: #23272b; color: #6ec1e4; }
+td { background: #23272b; }
+button { background: #6ec1e4; color: #23272b; border: none; border-radius: 4px; padding: 0.4em 1em; font-size: 1em; cursor: pointer; margin-bottom: 1em; }
+button:hover { background: #4fa3c7; }
+pre { background: #181a1b; color: #eaeaea; padding: 1em; border-radius: 4px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MMO Server Monitor</h1>
+</header>
+<div class="container">
+  <section>
+    <h2>Sessions <button onclick="refreshSessions()">Refresh</button></h2>
+    <div id="sessions"></div>
+  </section>
+  <section>
+    <h2>Shards <button onclick="refreshShards()">Refresh</button></h2>
+    <div id="shards"></div>
+  </section>
+  <section>
+    <h2>Entities <button onclick="refreshEntities()">Refresh</button></h2>
+    <div id="entities"></div>
+  </section>
+  <section>
+    <h2>Logs <button onclick="refreshLogs()">Refresh</button></h2>
+    <div id="logs"></div>
+  </section>
+</div>
+<script>
+async function fetchAndTable(endpoint, containerId, columns) {
+  const res = await fetch(endpoint);
+  const data = await res.json();
+  let arr = Object.values(data)[0];
+  let html = '';
+  if (arr.length === 0) {
+    html = '<em>No data</em>';
+  } else {
+    html = '<table><thead><tr>' + columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    for (const row of arr) {
+      html += '<tr>' + columns.map(c => `<td>${row[c] !== undefined ? row[c] : ''}</td>`).join('') + '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+  document.getElementById(containerId).innerHTML = html;
+}
+function refreshSessions() {
+  fetchAndTable('/sessions', 'sessions', ['endpoint','username','playerId','charId','connected','lastHeartbeat','playerName','sessionKey']);
+}
+function refreshShards() {
+  fetchAndTable('/shards', 'shards', ['zoneId','entityCount','playerCount']);
+}
+function refreshEntities() {
+  fetchAndTable('/entities', 'entities', ['id','type','zoneId','x','y','z']);
+}
+function refreshLogs() {
+  fetchAndTable('/logs', 'logs', ['timestamp','level','message']);
+}
+refreshSessions();
+refreshShards();
+refreshEntities();
+refreshLogs();
+</script>
+</body>
+</html>

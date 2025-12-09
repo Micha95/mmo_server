@@ -12,6 +12,15 @@ void UMMOGameInstance::Init()
         // Use Blueprint-configurable IP/port
         MMOClient->ConnectAuth(AuthServerIP, AuthServerPort);
     }
+    // Create NetworkedEntityManager UObject automatically
+    if (NetworkedEntityManagerClass)
+    {
+        NetworkedEntityManager = NewObject<UNetworkedEntityManager>(this, NetworkedEntityManagerClass);
+        if (NetworkedEntityManager)
+        {
+            NetworkedEntityManager->RegisterWithGameInstance(this);
+        }
+    }
 }
 
 void UMMOGameInstance::Shutdown()
@@ -92,6 +101,9 @@ void UMMOGameInstance::SelectCharacter(int32 CharId)
         FMemory::Memzero(&Packet, sizeof(Packet));
         Packet.header.packetId = PACKET_C_CHAR_SELECT;
         Packet.charId = CharId;
+        // Store selected character ID for later use
+        SelectedCharacterId = CharId;
+        // Send the packet to the auth server
         MMOClient->SendToAuth(TArray<uint8>((uint8*)&Packet, sizeof(Packet)));
     }
 }
@@ -111,6 +123,16 @@ void UMMOGameInstance::SendMoveRequest(const FVector& NewLocation)
         // Send as a single buffer
         MMOClient->SendToGame(TArray<uint8>((uint8*)&MovePacket, sizeof(MovePacket)));
     }
+}
+
+int32 UMMOGameInstance::GetPIEClientIndex() const
+{
+#if WITH_EDITOR
+    // GPlayInEditorID is set by Unreal for PIE clients (0 for first, 1 for second, ...)
+    return GPlayInEditorID;
+#else
+    return -1;
+#endif
 }
 
 // No additional implementation needed for SetNetworkedEntityManager

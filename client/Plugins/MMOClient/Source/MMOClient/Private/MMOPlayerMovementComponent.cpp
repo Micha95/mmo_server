@@ -40,15 +40,14 @@ void UMMOPlayerMovementComponent::SendCurrentPositionToServer()
         if (AActor* Owner = GetOwner())
         {
             FVector CurrentPos = Owner->GetActorLocation();
-            // Only send if the position is not (0,0,0) or the actor is initialized
-            static bool bHasSentValidPosition = false;
-            if (!CurrentPos.IsNearlyZero() || bHasSentValidPosition)
+            if ((!CurrentPos.IsNearlyZero() || bHasSentValidPosition) && !CurrentPos.Equals(LastSentPos, 0.01f))
             {
                 UE_LOG(LogTemp, Warning, TEXT("[MMO] Sending position to server: %s"), *CurrentPos.ToString());
                 SendMoveRequestToServer(CurrentPos);
                 bHasSentValidPosition = true;
+                LastSentPos = CurrentPos;
             }
-            else
+            else if (CurrentPos.IsNearlyZero() && !bHasSentValidPosition)
             {
                 UE_LOG(LogTemp, Warning, TEXT("[MMO] Skipping send: Actor at (0,0,0)"));
             }

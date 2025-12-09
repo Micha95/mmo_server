@@ -19,4 +19,7 @@ protected:
     void SendMoveRequestToServer(const FVector& Position);
     void OnMoveResponse(FVector ConfirmedLocation);
     void OnServerMoveConfirmed(const FVector& ConfirmedLocation);
+
+    FVector LastSentPos = FVector::ZeroVector;
+    bool bHasSentValidPosition = false;
 };

@@ -1,7 +1,18 @@
 #include "ZoneManager.h"
 #include "Entity.h"
 #include "Player.h"
-int ZoneManager::zoneSize = 100;
+#include "../../common/include/Log.h"
+
+ZoneManager* ZoneManager::s_instance = nullptr;
+
+ZoneManager* ZoneManager::Get() {
+    return s_instance;
+}
+
+void ZoneManager::SetInstance(ZoneManager* instance) {
+    s_instance = instance;
+}
+
 void ZoneManager::AddEntityToZone(int32_t zoneId, std::shared_ptr<Entity> entity) {
     zoneEntities[zoneId][entity->id] = entity;
     switch (entity->type) {
@@ -23,6 +34,8 @@ void ZoneManager::AddEntityToZone(int32_t zoneId, std::shared_ptr<Entity> entity
     // Broadcast spawn packet to all players in the zone for each entity type
     if (server) {
         const auto& players = GetPlayersInZone(zoneId);
+        //Players in zone
+        LOG_DEBUG("Adding entity " + std::to_string(entity->id) + " of type " + std::to_string(static_cast<int>(entity->type)) + " to zone " + std::to_string(zoneId));
         switch (entity->type) {
             case EntityType::PLAYER: {
                 S_PlayerSpawn spawn{};
@@ -46,7 +59,9 @@ void ZoneManager::AddEntityToZone(int32_t zoneId, std::shared_ptr<Entity> entity
                 for (const auto& pair : players) {
                     auto& p = pair.second;
                     if (p && p->session) {
+                        LOG_DEBUG("Sending player spawn packet to player " + p->session->username + " (EntityId: " + std::to_string(entity->id) + ")");
                         server->sendToClient(&spawn, sizeof(spawn), p->session->clientSock);
+                        
                     }
                 }
                 break;
@@ -182,15 +197,33 @@ std::vector<int32_t> ZoneManager::GetNearbyZones(float x, float y, float z) cons
 
 
 
-int32_t ZoneManager::CalculateZoneId(float x, float y) {
-
-    return static_cast<int32_t>(x) / GetZoneSize() + 1000 * (static_cast<int32_t>(y) / GetZoneSize());
+int32_t ZoneManager::CalculateZoneId(float x, float y) const {
+    return static_cast<int32_t>(x) / zoneSize + 1000 * (static_cast<int32_t>(y) / zoneSize);
 }
 
 void ZoneManager::SetZoneSize(int size) {
     zoneSize = size;
+    LOG("Zone size set to " + std::to_string(zoneSize));
+    if (zoneSize <= 0) {
+        LOG_ERROR("Invalid zone size: " + std::to_string(zoneSize) + ". Resetting to default 100.");
+        zoneSize = 100;
+    }
 }
 
-int ZoneManager::GetZoneSize() {
+int ZoneManager::GetZoneSize() const {
     return zoneSize;
 }
+
+std::vector<std::tuple<int32_t, int, int>> ZoneManager::GetZoneSummary() const {
+    std::vector<std::tuple<int32_t, int, int>> result;
+    for (const auto& zonePair : zoneEntities) {
+        int32_t zoneId = zonePair.first;
+        int entityCount = zonePair.second.size();
+        int playerCount = 0;
+        auto it = zonePlayers.find(zoneId);
+        if (it != zonePlayers.end()) playerCount = it->second.size();
+        result.emplace_back(zoneId, entityCount, playerCount);
+    }
+    return result;
+}
+

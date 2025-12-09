@@ -73,7 +73,7 @@ private:
         auto remote_endpoint = std::make_shared<boost::asio::ip::udp::endpoint>();
         socket.async_receive_from(boost::asio::buffer(*buf), *remote_endpoint,
             [this, buf, remote_endpoint](const boost::system::error_code& ec, std::size_t n) {
-                LOG_DEBUG("UDP receive lambda called: ec=" + std::to_string(ec.value()) + ", n=" + std::to_string(n));
+                LOG_DEBUG_EXT("UDP receive lambda called: ec=" + std::to_string(ec.value()) + ", n=" + std::to_string(n));
                 if (!ec && n > 0) {
                     // Emulate TCP framing: expect [4-byte length][payload]
                     if (n < 4) {

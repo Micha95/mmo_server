@@ -13,6 +13,7 @@ add_library(common STATIC
     common/src/Security.cpp
     common/src/SocketServer.cpp
     common/src/Log.cpp
+    common/src/WebGuiServer.cpp
 )
 target_include_directories(common PUBLIC common/include)
 
@@ -71,6 +72,9 @@ if(NOT HIREDIS_FOUND)
         message(FATAL_ERROR "Automatic hiredis installation is only supported on Linux. Please install hiredis manually.")
     endif()
 endif()
+
+
+
 target_link_libraries(common PUBLIC ${HIREDIS_LIBRARIES})
 target_include_directories(common PUBLIC ${HIREDIS_INCLUDE_DIRS})
 
@@ -88,6 +92,7 @@ target_include_directories(chat_server PRIVATE common/include chat/include)
 # Add game source files
 set(GAME_SOURCES
     game/src/main.cpp
+    game/src/GameServer.cpp
     game/src/ZoneManager.cpp
     game/src/MobManager.cpp
     game/src/Player.cpp
@@ -98,6 +103,8 @@ set(GAME_SOURCES
 add_executable(game_server ${GAME_SOURCES})
 target_link_libraries(game_server PRIVATE common)
 target_include_directories(game_server PRIVATE common/include game/include)
+target_compile_definitions(game_server PRIVATE GAME_SERVER)
+
 
 # Optionally, add system libraries here if needed (e.g., pthread, ssl, lzo2, mysqlclient, hiredis)
 # find_package(Threads REQUIRED)

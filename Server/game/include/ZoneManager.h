@@ -11,6 +11,10 @@ class Player;
 // ZoneManager splits the world into zones for network culling
 class ZoneManager {
 public:
+    // Singleton accessor
+    static ZoneManager* Get();
+    static void SetInstance(ZoneManager* instance);
+
     // Assign entity to a zone
     void AddEntityToZone(int32_t zoneId, std::shared_ptr<Entity> entity);
     // Remove entity from a zone
@@ -22,14 +26,18 @@ public:
     // Get zones near a position (for AOI/network culling)
     std::vector<int32_t> GetNearbyZones(float x, float y, float z) const;
     // Calculate zone id from position
-    static int32_t CalculateZoneId(float x, float y);
+    int32_t CalculateZoneId(float x, float y) const;
     // Set zone size from config
-    static void SetZoneSize(int size);
-    static int GetZoneSize();
+    void SetZoneSize(int size);
+    int GetZoneSize() const;
     // Set the server pointer
     void SetServer(BaseServer* srv) { server = srv; }
+    // Get a summary of all zones: (zoneId, entityCount, playerCount)
+    std::vector<std::tuple<int32_t, int, int>> GetZoneSummary() const;
+
 private:
-    static int zoneSize;
+    static ZoneManager* s_instance;
+    int zoneSize = 100;
     // zoneId -> (entityId -> shared_ptr<Entity>) for all entities
     std::unordered_map<int32_t, std::unordered_map<int32_t, std::shared_ptr<Entity>>> zoneEntities;
     // zoneId -> (entityId -> shared_ptr<Player>)

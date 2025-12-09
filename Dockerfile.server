@@ -1,0 +1,56 @@
+
+# Stage 1: Build libmysqlclient.so.21 from MySQL source
+FROM debian:stable-slim AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git \
+        build-essential \
+        cmake \
+        libncurses-dev \
+        libz-dev \
+        ca-certificates \
+        wget \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Clone MySQL source and Boost
+RUN git clone --depth 1 --branch mysql-8.0.21 https://github.com/mysql/mysql-server.git /tmp/mysql-server \
+    && mkdir -p /tmp/mysql-server/boost \
+    && wget -O /tmp/mysql-server/boost/boost_1_72_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.72.0/boost_1_72_0.tar.gz/download \
+    && tar -xzf /tmp/mysql-server/boost/boost_1_72_0.tar.gz -C /tmp/mysql-server/boost --strip-components=1
+
+# Build libmysqlclient
+RUN mkdir /tmp/mysql-server/build \
+    && cd /tmp/mysql-server/build \
+    && cmake .. -DWITH_BOOST=/tmp/mysql-server/boost \
+    && make -j$(nproc)
+
+# Stage 2: Minimal runtime image
+FROM debian:stable-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libssl3 \
+        libboost-system-dev \
+        libboost-thread-dev \
+        redis-server \
+        libmariadb3 \
+        ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+WORKDIR /app
+
+# Copy only the built client library
+COPY --from=builder /tmp/mysql-server/build/libmysql/libmysqlclient.so.21 /usr/lib/
+RUN ldconfig
+
+# Set environment variables for binary and config file
+ENV SERVER_BINARY=server_binary
+ENV CONFIG_FILE=config_example.cfg
+
+# Expect the server binary to be provided at runtime (e.g., via volume mount)
+# Entrypoint will run the binary with the config file argument
+ENTRYPOINT ["sh", "-c", "/app/$SERVER_BINARY --config /app/$CONFIG_FILE"]
+CMD []

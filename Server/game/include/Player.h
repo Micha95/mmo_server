@@ -15,6 +15,6 @@ public:
     SessionInfo* session = nullptr;
     Player();
     void Update(float deltaTime) override;
-    void InitFromDB(MySQLClient& mysql, int32_t charId, const std::string& name, int32_t accountId, ZoneManager* zm);
+    void InitFromDB(MySQLClient& mysql, int32_t charId, const std::string& name, int32_t accountId);
     void SaveToDB(MySQLClient& mysql);
 };
