@@ -131,7 +131,8 @@ inline void LogWorker() {
             // Console
             if (entry.level >= GLOBAL_LOG_LEVEL) {
                 std::ostream& out = (entry.level >= LogLevel::WARNING) ? std::cerr : std::cout;
-                out << LogLevelColor(entry.level) << "[" << LogLevelToString(entry.level) << "] " << entry.message << "\033[0m" << std::endl;
+                out << LogLevelColor(entry.level)
+                    << FormatTimestamp(entry.timestamp) << " [" << LogLevelToString(entry.level) << "] " << entry.message << "\033[0m" << std::endl;
             }
             lock.lock();
         }
