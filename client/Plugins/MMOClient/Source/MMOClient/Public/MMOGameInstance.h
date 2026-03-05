@@ -65,4 +65,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category="MMO|Char")
     int32 GetSelectedCharacterId() const { return SelectedCharacterId; }
+
+    void ReinitializeNetworkedEntityManager();
 };

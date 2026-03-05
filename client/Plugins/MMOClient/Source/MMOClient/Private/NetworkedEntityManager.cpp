@@ -77,6 +77,26 @@ UNetworkedEntityManager* UNetworkedEntityManager::Get(UGameInstance* GameInstanc
     return Singleton.Get();
 }
 
+
+void UNetworkedEntityManager::ClearAllEntities()
+{
+    for (auto& Elem : Entities)
+    {
+        FNetworkedEntityInfo& Info = Elem.Value;
+        if (Info.Actor.IsValid())
+        {
+            Info.Actor->Destroy();
+        }
+    }
+    Entities.Empty();
+    PlayerEntities.Empty();
+    MobEntities.Empty();
+    NPCEntities.Empty();
+    ItemEntities.Empty();
+    ShardEntities.Empty();
+    SpawnedActors.Empty();
+}
+
 void UNetworkedEntityManager::BeginDestroy()
 {
     // Cleanup: Destroy all spawned actors and clear entity maps

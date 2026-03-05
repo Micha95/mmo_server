@@ -5,6 +5,14 @@
 extern int32 GPlayInEditorID;
 #endif
 
+void UMMOGameInstance::ReinitializeNetworkedEntityManager()
+{
+    if (NetworkedEntityManager)
+    {
+        NetworkedEntityManager->ClearAllEntities();
+    }
+}
+
 
 
 void UMMOGameInstance::Init()
@@ -18,7 +26,6 @@ void UMMOGameInstance::Init()
         // Use Blueprint-configurable IP/port
         MMOClient->ConnectAuth(AuthServerIP, AuthServerPort);
     }
-    // Create NetworkedEntityManager UObject automatically
     if (NetworkedEntityManagerClass)
     {
         NetworkedEntityManager = NewObject<UNetworkedEntityManager>(this, NetworkedEntityManagerClass);
@@ -31,6 +38,12 @@ void UMMOGameInstance::Init()
 
 void UMMOGameInstance::Shutdown()
 {
+    if (NetworkedEntityManager)
+    {
+        NetworkedEntityManager->DeregisterFromGameInstance(this);
+        NetworkedEntityManager = nullptr;
+    }
+
     if (MMOClient)
     {
         MMOClient->Shutdown();
@@ -44,7 +57,8 @@ void UMMOGameInstance::Login(const FString& Username, const FString& Password)
 {
     if (MMOClient)
     {
-        // Construct login packet (assuming C_LoginRequest struct exists and matches server)
+        ReinitializeNetworkedEntityManager(); // Clear entities on new login
+        // Construct and send C_LoginRequest packet
         C_LoginRequest LoginPacket;
         FMemory::Memzero(&LoginPacket, sizeof(LoginPacket));
         LoginPacket.header.packetId = PACKET_C_LOGIN_REQUEST;

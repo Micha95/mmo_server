@@ -692,7 +692,8 @@ void UMMOClient::HandleGamePacket(const TArray<uint8>& Data)
                         OnGameConnected.Broadcast();
                     }
                 } else {
-                    UE_LOG(LogMMOClient, Warning, TEXT("Game server connection failed."));
+                    UE_LOG(LogMMOClient, Warning, TEXT("Game server connection failed. Switching back to AUTH state."));
+                    SetClientState(EMMOClientState::CONNECTING_AUTH);
                 }
             }
             break;
@@ -868,6 +869,7 @@ void UMMOClient::TickSockets()
                 && !LastAuthHost.IsEmpty() && LastAuthPort > 0
             ){
                 UE_LOG(LogMMOClient, Warning, TEXT("Reconnecting to Auth server at %s:%d"), *LastAuthHost, LastAuthPort);
+                DisconnectGame(); // Ensure Game socket is disconnected when Auth connection is lost
                 ConnectAuth(LastAuthHost, LastAuthPort);
             }
             break;
@@ -875,7 +877,8 @@ void UMMOClient::TickSockets()
             CheckHeartbeatTimeout(TEXT("Auth"), AuthHeartbeat);
             break;
         case EMMOClientState::CONNECTING_GAME: // Reconnecting to Game server & Chat Server only try for 5 seconds
-            if(gameRetryCount < 30)
+            
+            if(gameRetryCount < 5)
             {
                 gameRetryCount++;
                 if (
@@ -890,7 +893,7 @@ void UMMOClient::TickSockets()
             {
                 gameRetryCount = 0;
                 SetClientState(EMMOClientState::CONNECTING_AUTH);
-                UE_LOG(LogMMOClient, Warning, TEXT("Game server connection failed after 30 attempts. Switching to AUTH state."));
+                UE_LOG(LogMMOClient, Warning, TEXT("Game server connection failed after 5 attempts. Switching to AUTH state."));
             }
             break;
         case EMMOClientState::GAME: // Game server connected

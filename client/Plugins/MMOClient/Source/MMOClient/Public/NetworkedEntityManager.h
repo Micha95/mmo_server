@@ -106,6 +106,10 @@ public:
     // Register/deregister with game instance
     void RegisterWithGameInstance(UGameInstance* GameInstance);
     void DeregisterFromGameInstance(UGameInstance* GameInstance);
+
+
+    void ClearAllEntities();
+
 private:
     // EntityId -> Info (all entities, for fast lookup)
     UPROPERTY()
