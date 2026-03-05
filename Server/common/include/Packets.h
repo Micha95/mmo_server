@@ -12,6 +12,7 @@ enum PacketType : int16_t {
     PACKET_S_ERROR = 2,
     PACKET_C_CONNECT_REQUEST = 3,
     PACKET_S_CONNECT_RESULT = 4,
+    PACKET_S_DISCONNECT = 5, // Server-initiated disconnect notice (e.g. for server shutdown or kick)
 
     // Login/Auth/Char Select Packets (1000+)
     PACKET_C_LOGIN_REQUEST = 1000,
@@ -87,6 +88,7 @@ inline const char* PacketTypeToString(int16_t packetId) {
         case PACKET_S_NPC_DESPAWN: return "PACKET_S_NPC_DESPAWN";
         case PACKET_S_ITEM_SPAWN: return "PACKET_S_ITEM_SPAWN";
         case PACKET_S_ITEM_DESPAWN: return "PACKET_S_ITEM_DESPAWN";
+        case PACKET_S_DISCONNECT: return "PACKET_S_DISCONNECT";
         default: return "UNKNOWN_PACKET";
     }
 }
@@ -102,22 +104,19 @@ struct PacketHeader {
 // All packets must be structs, no functions, no unsigned types
 
 struct C_ConnectRequest {
-    static constexpr PacketType PACKET_ID = PACKET_C_CONNECT_REQUEST;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_CONNECT_REQUEST};
     char sessionKey[64]; // Session key for authentication
 };
 
 struct S_ConnectResult {
-    static constexpr PacketType PACKET_ID = PACKET_S_CONNECT_RESULT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_CONNECT_RESULT};
     int8_t resultCode; // 0 = OK, 1 = fail
 };
 
 
 // Example packet: Login request from client
 struct C_LoginRequest {
-    static constexpr PacketType PACKET_ID = PACKET_C_LOGIN_REQUEST;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_LOGIN_REQUEST};
     int32_t usernameLength;
     int32_t passwordLength;
     char username[64];
@@ -126,8 +125,7 @@ struct C_LoginRequest {
 
 // Example packet: Login response from server
 struct S_LoginResponse {
-    static constexpr PacketType PACKET_ID = PACKET_S_LOGIN_RESPONSE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_LOGIN_RESPONSE};
     int8_t resultCode; // 0 = OK, 1 = fail
     int8_t sessionKeyLength;
     char sessionKey[64];
@@ -135,59 +133,51 @@ struct S_LoginResponse {
 
 // Auth Packets
 struct C_CharCreate {
-    static constexpr PacketType PACKET_ID = PACKET_C_CHAR_CREATE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_CHAR_CREATE};
     int8_t nameLength;
     char name[32];
     int16_t classId;
 };
 
 struct S_CharCreateResult {
-    static constexpr PacketType PACKET_ID = PACKET_S_CHAR_CREATE_RESULT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_CHAR_CREATE_RESULT};
     int8_t resultCode; // 0 = OK, 1 = fail
     int32_t charId;
 };
 
 struct C_CharSelect {
-    static constexpr PacketType PACKET_ID = PACKET_C_CHAR_SELECT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_CHAR_SELECT};
     int32_t charId;
 };
 
 struct S_CharSelectResult {
-    static constexpr PacketType PACKET_ID = PACKET_S_CHAR_SELECT_RESULT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_CHAR_SELECT_RESULT};
     int8_t resultCode; // 0 = OK, 1 = fail
     char gameServerAddress[64];
     int32_t gameServerPort;
 };
 
 struct C_CharDelete {
-    static constexpr PacketType PACKET_ID = PACKET_C_CHAR_DELETE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_CHAR_DELETE};
     int32_t charId;
 };
 
 struct S_CharDeleteResult {
-    static constexpr PacketType PACKET_ID = PACKET_S_CHAR_DELETE_RESULT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_CHAR_DELETE_RESULT};
     int8_t resultCode; // 0 = OK, 1 = fail
     int32_t charId;
 };
 
 // Game Packets
 struct C_Move {
-    static constexpr PacketType PACKET_ID = PACKET_C_MOVE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_MOVE};
     float x;
     float y;
     float z;
 };
 
 struct S_Move {
-    static constexpr PacketType PACKET_ID = PACKET_S_MOVE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_MOVE};
     int64_t entityId; // Was charId, now supports all entity types
     int8_t entityType; // ENetworkedEntityType (Player, Mob, NPC, Item)
     int32_t shardId; // Add shardId for MMO sharding support
@@ -198,15 +188,13 @@ struct S_Move {
 };
 
 struct C_CombatAction {
-    static constexpr PacketType PACKET_ID = PACKET_C_COMBAT_ACTION;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_COMBAT_ACTION};
     int32_t targetId;
     int16_t skillId;
 };
 
 struct S_CombatResult {
-    static constexpr PacketType PACKET_ID = PACKET_S_COMBAT_RESULT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_COMBAT_RESULT};
     int32_t attackerId;
     int32_t targetId;
     int16_t damage;
@@ -215,8 +203,7 @@ struct S_CombatResult {
 
 // --- Entity Spawn/Despawn Packets ---
 struct S_PlayerSpawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_PLAYER_SPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_PLAYER_SPAWN};
     int64_t entityId;
     int32_t shardId;
     float x, y, z;
@@ -226,13 +213,11 @@ struct S_PlayerSpawn {
     int32_t level;
 };
 struct S_PlayerDespawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_PLAYER_DESPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_PLAYER_DESPAWN};
     int64_t entityId;
 };
 struct S_MobSpawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_MOB_SPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_MOB_SPAWN};
     int64_t entityId;
     int32_t shardId;
     float x, y, z;
@@ -241,13 +226,11 @@ struct S_MobSpawn {
     int32_t level;
 };
 struct S_MobDespawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_MOB_DESPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_MOB_DESPAWN};
     int64_t entityId;
 };
 struct S_NPCSpawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_NPC_SPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_NPC_SPAWN};
     int64_t entityId;
     int32_t shardId;
     float x, y, z;
@@ -255,13 +238,11 @@ struct S_NPCSpawn {
     int32_t npcTypeId;
 };
 struct S_NPCDespawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_NPC_DESPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_NPC_DESPAWN};
     int64_t entityId;
 };
 struct S_ItemSpawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_ITEM_SPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_ITEM_SPAWN};
     int64_t entityId;
     int32_t shardId;
     float x, y, z;
@@ -269,15 +250,13 @@ struct S_ItemSpawn {
     int32_t count;
 };
 struct S_ItemDespawn {
-    static constexpr PacketType PACKET_ID = PACKET_S_ITEM_DESPAWN;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_ITEM_DESPAWN};
     int64_t entityId;
 };
 
 // Chat Packets
 struct C_ChatMessage {
-    static constexpr PacketType PACKET_ID = PACKET_C_CHAT_MESSAGE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_CHAT_MESSAGE};
     int8_t type; // 0=private,1=guild,2=party,3=local,4=channel,5=world
     int32_t targetId; // for private/guild/party
     int16_t messageLength;
@@ -285,8 +264,7 @@ struct C_ChatMessage {
 };
 
 struct S_ChatMessage {
-    static constexpr PacketType PACKET_ID = PACKET_S_CHAT_MESSAGE;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_CHAT_MESSAGE};
     int8_t type;
     int32_t fromId;
     int32_t toId;
@@ -296,8 +274,7 @@ struct S_ChatMessage {
 
 // Character List Packets
 struct C_CharListRequest {
-    static constexpr PacketType PACKET_ID = PACKET_C_CHAR_LIST_REQUEST;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_CHAR_LIST_REQUEST};
     // No additional fields needed
 };
 
@@ -310,31 +287,34 @@ struct CharListEntry {
 };
 
 struct S_CharListResult {
-    static constexpr PacketType PACKET_ID = PACKET_S_CHAR_LIST_RESULT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_CHAR_LIST_RESULT};
     int8_t charCount;
     CharListEntry entries[];
 };
 
 // Heartbeat/Connection
 struct C_Heartbeat {
-    static constexpr PacketType PACKET_ID = PACKET_C_HEARTBEAT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_C_HEARTBEAT};
     int32_t timestamp;
 };
 
 struct S_Heartbeat {
-    static constexpr PacketType PACKET_ID = PACKET_S_HEARTBEAT;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_HEARTBEAT};
     int32_t timestamp;
 };
 
 struct S_Error {
-    static constexpr PacketType PACKET_ID = PACKET_S_ERROR;
-    PacketHeader header{PACKET_ID};
+    PacketHeader header{PACKET_S_ERROR};
     int16_t errorCode;
     char errorMsg[128];
 };
+
+struct S_Disconnect {
+    PacketHeader header{PACKET_S_DISCONNECT};
+    int16_t reasonCode; // 0 = server shutdown, 1 = kick, etc
+    char message[128]; // Optional message to client
+};
+
 #pragma pack(pop)
 
 // Static key for all packet encryption (32 bytes for AES-256)
@@ -370,3 +350,4 @@ inline bool DeserializePacketRaw(const std::vector<uint8_t>& data, void* out, si
 // Static asserts for struct size validation
 static_assert(sizeof(PacketHeader) == 2, "PacketHeader size mismatch!");
 static_assert(sizeof(C_LoginRequest) == 138, "C_LoginRequest size mismatch!");
+static_assert(sizeof(S_Disconnect) == 132, "S_Disconnect size mismatch!");
