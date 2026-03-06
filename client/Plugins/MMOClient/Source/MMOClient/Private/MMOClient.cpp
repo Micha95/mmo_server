@@ -542,6 +542,14 @@ void UMMOClient::HandleAuthPacket(const TArray<uint8>& Data)
     PacketHeader header;
     FMemory::Memcpy(&header, Data.GetData(), sizeof(PacketHeader));
     switch (header.packetId) {
+        case PACKET_S_DISCONNECT: {
+            S_Disconnect resp;
+            if (DeserializeStruct(Data, resp)) {
+                UE_LOG(LogMMOClient, Warning, TEXT("Received disconnect from Auth server. Reason code: %d"), resp.reasonCode);
+                DisconnectAuth();
+            }
+            break;
+        }
         case PACKET_S_LOGIN_RESPONSE: {
             S_LoginResponse resp;
             if (DeserializeStruct(Data, resp)) {
@@ -654,6 +662,14 @@ void UMMOClient::HandleGamePacket(const TArray<uint8>& Data)
             header.packetId, PacketTypeToString(header.packetId), Data.Num());
     }
     switch (header.packetId) {
+        case PACKET_S_DISCONNECT: {
+            S_Disconnect resp;
+            if (DeserializeStruct(Data, resp)) {
+                UE_LOG(LogMMOClient, Warning, TEXT("Received disconnect from Game server. Switching to Auth again. Reason code: %d"), resp.reasonCode);
+                SetClientState(EMMOClientState::CONNECTING_AUTH);
+            }
+            break;
+        }
         case PACKET_S_MOVE: {
             S_Move move;
             if (DeserializeStruct(Data, move)) {

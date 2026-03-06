@@ -17,7 +17,7 @@ public:
     // New: connection event handlers
     virtual void setConnectionHandler(SocketConnectionHandler onConnect, SocketConnectionHandler onDisconnect) = 0;
     // Add disconnect method
-    virtual void disconnect(intptr_t clientSock) = 0;
+    virtual void disconnect(intptr_t clientSock, const std::string& reason, int16_t reasonCode = 0) = 0;
 
     SocketConnectionHandler onConnect;
     SocketConnectionHandler onDisconnect;

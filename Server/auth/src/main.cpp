@@ -54,6 +54,36 @@ public:
                     for (int i = 0; i < req.usernameLength; ++i) oss << std::hex << (int)(unsigned char)req.username[i] << " ";
                     LOG_DEBUG(oss.str());
                 }
+                // Check if user is already logged in (by username)
+                bool alreadyLoggedIn = false;
+                for (const auto& [key, sess] : sessionMap) {
+                    if (sess.username == username && sess.playerId != -1 && sess.connected) {
+                        alreadyLoggedIn = true;
+                        break;
+                    }
+                }
+                if (alreadyLoggedIn) {
+                    LOG_DEBUG("Login failed: user is already logged in: " + username);
+                    S_LoginResponse resp{};
+                    resp.header.packetId = PACKET_S_LOGIN_RESPONSE;
+                    resp.resultCode = 2; // Custom code: already logged in
+                    resp.sessionKeyLength = 0;
+                    sendToClient(&resp, sizeof(resp), clientSock);
+                    // Publish kick message to other servers
+                    S_CrossServerPlayerKick kickMsg{};
+                    kickMsg.header.packetId = CROSSSERVER_PLAYER_KICK;
+                    // Query playerId from DB to get correct id
+                    std::string query = "SELECT id FROM accounts WHERE username='" + username + "'";
+                    std::vector<std::vector<std::string>> result;
+                    if (mysql.query(query, result) && !result.empty()) {
+                        kickMsg.playerId = std::stoi(result[0][0]);
+                        publishMessage("system", &kickMsg, sizeof(kickMsg));
+                        LOG_DEBUG("Published kick message for playerId=" + std::to_string(kickMsg.playerId));
+                    } else {
+                        LOG_DEBUG("Could not publish kick: playerId not found for username=" + username);
+                    }
+                    break;
+                }
                 std::string query = "SELECT id, password FROM accounts WHERE username='" + username + "'";
                 LOG_DEBUG("Query: " + query);
                 std::vector<std::vector<std::string>> result;
@@ -420,12 +450,14 @@ int main(int argc, char** argv) {
         server.run(argc, argv);
         LOG_DEBUG("server_thread: server.run() returned, thread exiting.");
     });
+
     // Run io_context in main thread
     io_context.run();
     LOG_DEBUG("io_context ended run.");
     // After signal, wait for server to finish
     server_thread.join();
     LOG_DEBUG("Server Thread joined.");
+    
     // Now stop io_context to ensure all handlers are done
     io_context.stop();
     LOG_DEBUG("main() is returning, process should exit now.");

@@ -81,8 +81,13 @@ public:
         this->onConnect = onConnect;
         this->onDisconnect = onDisconnect;
     }
-    void disconnect(intptr_t /*clientSock*/) override {
-        // UDP is connectionless; nothing to do
+    void disconnect(intptr_t clientSock, const std::string& reason, int16_t reasonCode = 0) override {
+        // Send disconnect packet to clientSock
+        S_Disconnect disconnectPacket{};
+        disconnectPacket.reasonCode = reasonCode;
+        std::strncpy(disconnectPacket.message, reason.c_str(), sizeof(disconnectPacket.message) - 1);
+        auto data = SerializePacketRaw(&disconnectPacket, sizeof(disconnectPacket));
+        send(data, clientSock);
     }
 private:
     void doRead() {

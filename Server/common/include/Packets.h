@@ -311,7 +311,7 @@ struct S_Error {
 
 struct S_Disconnect {
     PacketHeader header{PACKET_S_DISCONNECT};
-    int16_t reasonCode; // 0 = server shutdown, 1 = kick, etc
+    int16_t reasonCode; // 0 = server shutdown, 1 = kick, etc , for now allways 0
     char message[128]; // Optional message to client
 };
 

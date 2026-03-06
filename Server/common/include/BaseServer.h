@@ -5,6 +5,7 @@
 #include "MySQLClient.h" // Include MySQLClient header
 #include "Packets.h"
 #include "WebGuiServer.h" // Include WebGuiServer header
+#include "CrossServerPackets.h"
 #include <string>
 #include <atomic>
 #include <thread>
@@ -49,6 +50,10 @@ public:
 
     void sendToClient(const void* packet, size_t size, intptr_t clientSock);
 
+    // Redis Pub/Sub for server-to-server communication
+    void publishMessage(const std::string& channel, const void* packet, size_t size);
+    virtual void onSystemMessage(const std::string& channel, const void* packet, size_t size);
+
     // Heartbeat constants
     static constexpr int HEARTBEAT_INTERVAL_SEC = 2;
     static constexpr int HEARTBEAT_TIMEOUT_SEC = 12;
@@ -61,6 +66,9 @@ public:
 
     bool loadConfig(int argc, char** argv);
     std::string serverType;
+
+    void messageLoop(); // NEW: separate message loop for Redis Pub/Sub
+
 protected:
     
     bool startSocket();

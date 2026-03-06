@@ -35,7 +35,6 @@ void GameServer::handlePacket(const PacketHeader& header, const std::vector<uint
                 resp.header.packetId = PACKET_S_CONNECT_RESULT;
                 resp.resultCode = 1; // fail
                 sendToClient(&resp, sizeof(resp), clientSock);
-                server->disconnect(clientSock);
                 sessionMap.erase(endpointKey);
                 return;
             }

@@ -1,11 +1,21 @@
+// All includes at the top
 #include "RedisClient.h"
+
 #include <hiredis/hiredis.h>
 #include <map>
 #include <vector>
 #include <string>
+#include <unistd.h>
+#include <fcntl.h>
+#include <functional>
+#include "Log.h"
 
-RedisClient::RedisClient() : ctx(nullptr) {}
-RedisClient::~RedisClient() { if (ctx) redisFree(ctx); }
+
+RedisClient::RedisClient() : ctx(nullptr), subCtx(nullptr) {}
+RedisClient::~RedisClient() {
+    if (ctx) redisFree(ctx);
+    if (subCtx) redisFree(subCtx);
+}
 
 bool RedisClient::connect(const std::string& host, int port, const std::string& user, const std::string& password) {
     if (ctx) redisFree(ctx);
@@ -14,11 +24,39 @@ bool RedisClient::connect(const std::string& host, int port, const std::string& 
         if (ctx) { redisFree(ctx); ctx = nullptr; }
         return false;
     }
+    // Setup subCtx for subscription
+    if (subCtx) redisFree(subCtx);
+    subCtx = redisConnect(host.c_str(), port);
+    if (!subCtx || subCtx->err) {
+        if (subCtx) { redisFree(subCtx); subCtx = nullptr; }
+        redisFree(ctx); ctx = nullptr;
+        return false;
+    }
     if (!password.empty()) {
-        redisReply* reply = (redisReply*)redisCommand(ctx, "AUTH %s %s", user.c_str(), password.c_str());
+        redisReply* reply = nullptr;
+        if (!user.empty()) {
+            reply = (redisReply*)redisCommand(ctx, "AUTH %s %s", user.c_str(), password.c_str());
+        } else {
+            reply = (redisReply*)redisCommand(ctx, "AUTH %s", password.c_str());
+        }
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
             if (reply) freeReplyObject(reply);
             redisFree(ctx); ctx = nullptr;
+            redisFree(subCtx); subCtx = nullptr;
+            return false;
+        }
+        freeReplyObject(reply);
+        // Authenticate subCtx
+        reply = nullptr;
+        if (!user.empty()) {
+            reply = (redisReply*)redisCommand(subCtx, "AUTH %s %s", user.c_str(), password.c_str());
+        } else {
+            reply = (redisReply*)redisCommand(subCtx, "AUTH %s", password.c_str());
+        }
+        if (!reply || reply->type == REDIS_REPLY_ERROR) {
+            if (reply) freeReplyObject(reply);
+            redisFree(ctx); ctx = nullptr;
+            redisFree(subCtx); subCtx = nullptr;
             return false;
         }
         freeReplyObject(reply);
@@ -115,10 +153,100 @@ bool RedisClient::hgetall(const std::string& key, std::map<std::string, std::str
     }
     outFields.clear();
     for (size_t i = 0; i < reply->elements; i += 2) {
-        std::string field = reply->element[i]->str;
-        std::string value = reply->element[i+1]->str;
+        const char* fieldStr = reply->element[i]->str;
+        const char* valueStr = reply->element[i+1]->str;
+        std::string field = fieldStr ? fieldStr : "";
+        std::string value = valueStr ? valueStr : "";
         outFields[field] = value;
     }
     freeReplyObject(reply);
     return true;
+}
+
+// Publish a message to a Redis channel
+bool RedisClient::publish(const std::string& channel, const std::string& message) {
+    if (!ctx) return false;
+    LOG_DEBUG_EXT("Publishing to Redis channel '" + channel + "': " + message +"size=" + std::to_string(message.size()));
+    const char* argv[3];
+    size_t argvlen[3];
+    argv[0] = "PUBLISH";
+    argvlen[0] = 7;
+    argv[1] = channel.c_str();
+    argvlen[1] = channel.size();
+    argv[2] = message.data();
+    argvlen[2] = message.size();
+    redisReply* reply = (redisReply*)redisCommandArgv(ctx, 3, argv, argvlen);
+    bool ok = reply && (reply->type == REDIS_REPLY_INTEGER || reply->type == REDIS_REPLY_STATUS);
+    if (reply) freeReplyObject(reply);
+    return ok;
+}
+
+
+// Subscribe to a channel (sends SUBSCRIBE command)
+bool RedisClient::subscribe(const std::string& channel) {
+    if (!subCtx) return false;
+    redisReply* reply = (redisReply*)redisCommand(subCtx, "SUBSCRIBE %s", channel.c_str());
+    if (!reply || reply->type == REDIS_REPLY_ERROR) {
+        if (reply) freeReplyObject(reply);
+        return false;
+    }
+    freeReplyObject(reply);
+    return true;
+}
+
+// Poll for a message (non-blocking)
+bool RedisClient::pollMessage(std::string& outChannel, std::string& outPayload) {
+    if (!subCtx) return false;
+
+    //Use select() to check if there's data to read on subCtx->fd before calling redisGetReply, to avoid blocking
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    if (subCtx->fd >= 0) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(subCtx->fd, &rfds);
+        int ret = select(subCtx->fd + 1, &rfds, nullptr, nullptr, &tv);
+        if (ret <= 0) {
+            return false;
+        }
+    }
+    redisReply* reply = nullptr;
+    bool gotMsg = false;
+    int rc = redisGetReply(subCtx, (void**)&reply);
+    if (rc == REDIS_OK) {
+        if (reply) {
+            LOG_DEBUG_EXT("Redis reply type: " + std::to_string(reply->type) + ", elements: " + std::to_string(reply->elements));
+            if (reply->type == REDIS_REPLY_ARRAY && reply->elements >= 1) {
+                std::string type = reply->element[0]->str ? reply->element[0]->str : "";
+                LOG_DEBUG_EXT("Redis array reply type: " + type);
+                if (type == "message" && reply->elements >= 3) {
+                    // Handle channel as string (should be safe)
+                    outChannel = reply->element[1]->str ? reply->element[1]->str : "";
+                    // Handle payload as binary-safe string
+                    if (reply->element[2]->str && reply->element[2]->len > 0) {
+                        outPayload.assign(reply->element[2]->str, reply->element[2]->len);
+                    } else {
+                        outPayload.clear();
+                    }
+                    LOG_DEBUG_EXT("Received message: channel='" + outChannel + "', payload size=" + std::to_string(outPayload.size()));
+                    gotMsg = true;
+                }
+            }
+        }
+    } else {
+        LOG_ERROR("redisGetReply failed or returned no reply: " + std::to_string(rc));
+    }
+    if (reply) freeReplyObject(reply);
+    return gotMsg;
+    /*struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    if (subCtx->fd >= 0) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(subCtx->fd, &rfds);
+        int ret = select(subCtx->fd + 1, &rfds, nullptr, nullptr, &tv);
+        if (ret <= 0) return false; // No data available, don't block
+    }*/
 }

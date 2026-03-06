@@ -1,6 +1,7 @@
 #include "BaseServer.h"
 #include "Packets.h"
 #include "Log.h"
+#include "CrossServerPackets.h"
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -155,6 +156,8 @@ int BaseServer::run(int argc, char** argv) {
         }
         handlePacket(header, plain, clientSock, clientAddr);
     });
+
+    
     mainLoop();
     LOG_DEBUG("mainLoop() is returning.");
     PrintMySQLDiagnostics();
@@ -309,6 +312,13 @@ void BaseServer::mainLoop() {
     std::string ip = config.get("bind_ip");
     int tick = 0;
     RegisterServerInRedis(redis, redisKey, ip, port, num_sessions);
+     // Start Redis message loop thread
+    std::thread message_loop_thread([&](){
+        LOG_DEBUG("message_loop_thread: starting messageLoop()");
+        messageLoop();
+        LOG_DEBUG("message_loop_thread: messageLoop() returned, thread exiting.");
+    });
+    
     LOG_INFO(serverType + " server running on " + ip + ":" + std::to_string(port) + ".\nUse system signals to shut down.");
     const int tickRate = 30; // 30 ticks per second
     const std::chrono::milliseconds tickDuration(1000 / tickRate);
@@ -335,11 +345,61 @@ void BaseServer::mainLoop() {
             std::this_thread::sleep_for(tickDuration - elapsed);
         }
     }
+    message_loop_thread.join();
+    LOG_DEBUG("Message Loop Thread joined.");
     server->stop();
     delete server;
     LOG_DEBUG("mainLoop() is returning.");
 }
 
+void BaseServer::messageLoop() {
+    LOG_INFO("Subscribing to Redis system channel for inter-server communication...");
+    std::string SystemChannel = "system";
+    bool subscribed = redis.subscribe(SystemChannel);
+    if(!subscribed) {
+        LOG_ERROR("Failed to subscribe to Redis system channel! Inter-server communication will not work.");
+        return;
+    }
+    LOG_INFO("Subscribed to Redis system channel: " + SystemChannel);
+    while (running) {
+        std::string channel, payload;
+        if (redis.pollMessage(channel, payload)) {
+            LOG_DEBUG("Received message on Redis channel '" + channel + "', size=" + std::to_string(payload.size()));
+            // Log hex after receive, before decrypt
+            std::vector<uint8_t> raw(payload.begin(), payload.end());
+            {
+                std::ostringstream oss;
+                oss << "[RECEIVE] " << channel << " HEX: ";
+                for (size_t i = 0; i < raw.size(); ++i) {
+                    oss << std::hex << std::setw(2) << std::setfill('0') << (int)raw[i] << " ";
+                }
+                LOG_DEBUG_EXT(oss.str());
+            }
+            std::vector<uint8_t> plain;
+            if (Crypto::decrypt(raw, plain, PACKET_CRYPTO_KEY)) {
+                std::vector<uint8_t> decompressed;
+                if (Compression::decompress(plain, decompressed)) {
+                    plain = std::move(decompressed);
+                }
+            } else {
+                plain = std::move(raw); // fallback: not encrypted
+            }
+            // Log hex after decrypt/decompress
+            {
+                std::ostringstream oss;
+                oss << "[AFTER DECRYPT/DECOMPRESS] " << channel << " HEX: ";
+                for (size_t i = 0; i < plain.size(); ++i) {
+                    oss << std::hex << std::setw(2) << std::setfill('0') << (int)plain[i] << " ";
+                }
+                LOG_DEBUG_EXT(oss.str());
+            }
+            onSystemMessage(channel, plain.data(), plain.size());
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    LOG_INFO("Exiting message loop.");
+}
 std::string BaseServer::GenerateUniqueId() {
     static std::random_device rd;
     static std::mt19937 gen(rd());
@@ -437,5 +497,65 @@ void BaseServer::PrintMySQLDiagnostics() {
         std::cout << std::endl;
     } else {
         LOG_ERROR("[MySQL] SHOW TABLES failed (server connection).");
+    }
+}
+// Publish a message to the system channel (binary)
+
+void BaseServer::publishMessage(const std::string& channel, const void* packet, size_t size) {
+    const CrossServerPacketHeader* header = static_cast<const CrossServerPacketHeader*>(packet);
+    nlohmann::json j;
+    switch (header->packetId) {
+        case CROSSSERVER_SYSTEM_MESSAGE:
+            j = *static_cast<const S_CrossServerSystemMessage*>(packet);
+            break;
+        case CROSSSERVER_PLAYER_KICK:
+            j = *static_cast<const S_CrossServerPlayerKick*>(packet);
+            break;
+        // Add more cases as needed
+        default:
+            LOG_ERROR("Unknown packet type for publishMessage");
+            return;
+    }
+    std::string jsonStr = j.dump();
+    LOG_DEBUG_EXT("[PUBLISH] " + channel + " JSON: " + jsonStr);
+    redis.publish(channel, jsonStr);
+}
+
+// Default handler for system channel messages (can be overridden)
+void BaseServer::onSystemMessage(const std::string& channel, const void* packet, size_t size) {
+
+    std::string jsonStr(reinterpret_cast<const char*>(packet), size);
+    LOG_DEBUG_EXT("[ON_SYSTEM_MESSAGE] " + channel + " JSON: " + jsonStr);
+    nlohmann::json j = nlohmann::json::parse(jsonStr);
+    CrossServerPacketHeader header = j.at("header").get<CrossServerPacketHeader>();
+    const char* packetName = CrossServerPacketTypeToString(header.packetId);
+    LOG_DEBUG("[" + channel + "] Received packetId=" + std::to_string(header.packetId) + " (" + packetName + "), size=" + std::to_string(size));
+    switch (header.packetId) {
+        case CROSSSERVER_SYSTEM_MESSAGE: {
+            S_CrossServerSystemMessage sysMsg = j.get<S_CrossServerSystemMessage>();
+            // handle sysMsg
+            break;
+        }
+        case CROSSSERVER_PLAYER_KICK: {
+            S_CrossServerPlayerKick kickMsg = j.get<S_CrossServerPlayerKick>();
+            bool kicked = false;
+            for (auto& [endpointKey, sess] : sessionMap) {
+                if (sess.playerId == kickMsg.playerId) {
+                    S_Disconnect disconnectPacket;
+                    std::memset(&disconnectPacket, 0, sizeof(disconnectPacket));
+                    disconnectPacket.header.packetId = PACKET_S_DISCONNECT;
+                    disconnectPacket.reasonCode = 1; // 1 = kick
+                    std::strncpy(disconnectPacket.message, "You have been kicked by the server.", sizeof(disconnectPacket.message) - 1);
+                    sendToClient(&disconnectPacket, sizeof(disconnectPacket), sess.clientSock);
+                    LOG_DEBUG("Sent S_Disconnect to playerId=" + std::to_string(sess.playerId) + ", endpoint=" + endpointKey);
+                    kicked = true;
+                }
+            }
+            if (!kicked) {
+                LOG_DEBUG_EXT("CROSSSERVER_PLAYER_KICK: playerId=" + std::to_string(kickMsg.playerId) + " not found in sessions.");
+            }
+            break;
+        }
+        // Add more cases as needed
     }
 }

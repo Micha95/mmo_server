@@ -17,6 +17,9 @@ int main(int argc, char** argv) {
         for (auto& kv : server.GetSessionMap()) {
             auto& session = kv.second;
             if (session.playerEntity) {
+                if(server.getSocketServer()) {
+                    server.getSocketServer()->disconnect(session.clientSock, "Server shutting down", 0);
+                }
                 session.playerEntity->SaveToDB(server.GetMySQL());
             }
         }
@@ -30,12 +33,21 @@ int main(int argc, char** argv) {
         server.run(argc, argv);
         LOG_DEBUG("server_thread: server.run() returned, thread exiting.");
     });
+
+    // Start Redis message loop thread
+    std::thread message_loop_thread([&](){
+        LOG_DEBUG("message_loop_thread: starting server.messageLoop()");
+        server.messageLoop();
+        LOG_DEBUG("message_loop_thread: server.messageLoop() returned, thread exiting.");
+    });
     // Run io_context in main thread
     io_context.run();
     LOG_DEBUG("io_context ended run.");
     // After signal, wait for server to finish
     server_thread.join();
     LOG_DEBUG("Server Thread joined.");
+    message_loop_thread.join();
+    LOG_DEBUG("Message Loop Thread joined.");
     // Now stop io_context to ensure all handlers are done
     io_context.stop();
     LOG_DEBUG("main() is returning, process should exit now.");
